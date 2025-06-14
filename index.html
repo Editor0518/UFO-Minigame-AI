@@ -85,51 +85,80 @@
                 this.createStars();
                 this.gameLoop();
             }
-            initControls() {
+           initControls() {
     document.addEventListener('keydown', e => {
-        // 키 식별용 keyId 정의
-        const keyId = e.code || e.key;
+        const { code, key, keyCode } = e;
 
-        this.keys[keyId] = true;
+        // ← 키 눌림
+        if (code === 'ArrowLeft' || key === 'ArrowLeft' || keyCode === 37) {
+            this.keys['ArrowLeft'] = true;
+        }
+        // → 키 눌림
+        if (code === 'ArrowRight' || key === 'ArrowRight' || keyCode === 39) {
+            this.keys['ArrowRight'] = true;
+        }
 
-        // 스페이스바 감지 (다양한 브라우저 호환)
-        const isSpace = (
-            e.code === 'Space' ||
-            e.key === ' ' ||
-            e.key === 'Spacebar' ||  // 일부 구형 브라우저
-            e.keyCode === 32          // 레거시 fallback
-        );
-        if (isSpace) {
-            e.preventDefault();
+        // 스페이스바: 시작/재시작
+        if (code === 'Space' || key === ' ' || key === 'Spacebar' || keyCode === 32) {
+            e.preventDefault(); // 페이지 스크롤 방지
             if (this.gameState === 'waiting' || this.gameState === 'gameOver') {
                 this.startGame();
             }
         }
 
-        // Z 키 발사
-        const isZ = (
-            e.code === 'KeyZ' ||
-            e.key === 'z' ||
-            e.key === 'Z'
-        );
-        if (isZ && this.gameState === 'playing') {
-            this.missiles.push({
-                x: this.ufo.x + 14,
-                y: this.ufo.y,
-                width: 4, height: 8,
-                speed: this.missileSpeed
-            });
+        // Z 키: 미사일 발사
+        if (code === 'KeyZ' || key === 'z' || key === 'Z' || keyCode === 90) {
+            if (this.gameState === 'playing') {
+                this.missiles.push({
+                    x: this.ufo.x + 14,
+                    y: this.ufo.y,
+                    width: 4, height: 8,
+                    speed: this.missileSpeed
+                });
+            }
         }
     });
 
     document.addEventListener('keyup', e => {
-        const keyId = e.code || e.key;
-        this.keys[keyId] = false;
+        const { code, key, keyCode } = e;
+
+        // ← 키 뗌
+        if (code === 'ArrowLeft' || key === 'ArrowLeft' || keyCode === 37) {
+            this.keys['ArrowLeft'] = false;
+        }
+        // → 키 뗌
+        if (code === 'ArrowRight' || key === 'ArrowRight' || keyCode === 39) {
+            this.keys['ArrowRight'] = false;
+        }
     });
 
-    // 터치 이벤트는 그대로 유지
-    this.canvas.addEventListener('touchstart', e => { /* ... */ });
-    this.canvas.addEventListener('touchmove', e => { /* ... */ });
+    // 터치 컨트롤은 그대로 유지
+    // 터치로 게임 시작 및 UFO 이동
+this.canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = this.canvas.getBoundingClientRect();
+    this.touchStartX = touch.clientX - rect.left;
+    if (this.gameState === 'waiting' || this.gameState === 'gameOver') {
+        this.startGame();
+    }
+});
+
+this.canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (this.gameState === 'playing') {
+        const touch = e.touches[0];
+        const rect = this.canvas.getBoundingClientRect();
+        const touchX = touch.clientX - rect.left;
+        if (touchX < this.touchStartX - 30) {
+            this.ufo.x = Math.max(16, this.ufo.x - this.ufo.speed);
+        } else if (touchX > this.touchStartX + 30) {
+            this.ufo.x = Math.min(this.canvas.width - 48, this.ufo.x + this.ufo.speed);
+        }
+        this.touchStartX = touchX;
+    }
+});
+
 }
 
             createStars() { 
