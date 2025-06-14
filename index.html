@@ -67,12 +67,15 @@
 
                 this.sunWarning = false;
                 this.sunActive = false;
-                this.sunSpeed = 0.5;
+                this.sunSpeed = 2;
+                this.sunY = 0;
                 this.sunX = 0;
                 this.sunWarningStart = 0;
                 this.sunWarningDuration = 3000;
                 this.sunThresholdTime = 15;
-                this.sunWidth = this.canvas.width / 3;
+                this.sunRadius = this.canvas.width / 6;
+                this.sunCount = 0;
+                this.lastSunTime = 0;
 
                 this.keys = {};
                 this.touchStartX = 0;
@@ -83,220 +86,374 @@
                 this.gameLoop();
             }
             initControls() {
-                document.addEventListener('keydown', e => {
-                    this.keys[e.code] = true;
-                    if (e.code === 'Space') {
-                        e.preventDefault();
-                        if (this.gameState === 'waiting' || this.gameState === 'gameOver') this.startGame();
-                    }
-                    if (e.code === 'KeyZ' && this.gameState === 'playing') {
-                        this.missiles.push({ x:this.ufo.x+14, y:this.ufo.y, width:4, height:8, speed:this.missileSpeed });
-                    }
-                });
-                document.addEventListener('keyup', e => { this.keys[e.code] = false; });
-                this.canvas.addEventListener('touchstart', e => {
-                    e.preventDefault();
-                    const touch = e.touches[0];
-                    const rect = this.canvas.getBoundingClientRect();
-                    this.touchStartX = touch.clientX - rect.left;
-                    if (this.gameState === 'waiting' || this.gameState === 'gameOver') this.startGame();
-                });
-                this.canvas.addEventListener('touchmove', e => {
-                    e.preventDefault();
-                    if (this.gameState === 'playing') {
-                        const touch = e.touches[0];
-                        const rect = this.canvas.getBoundingClientRect();
-                        const touchX = touch.clientX - rect.left;
-                        if (touchX < this.touchStartX - 30) this.ufo.x = Math.max(16, this.ufo.x - this.ufo.speed);
-                        else if (touchX > this.touchStartX + 30) this.ufo.x = Math.min(this.canvas.width - 48, this.ufo.x + this.ufo.speed);
-                        this.touchStartX = touchX;
-                    }
-                });
+    document.addEventListener('keydown', e => {
+        // 키 식별용 keyId 정의
+        const keyId = e.code || e.key;
+
+        this.keys[keyId] = true;
+
+        // 스페이스바 감지 (다양한 브라우저 호환)
+        const isSpace = (
+            e.code === 'Space' ||
+            e.key === ' ' ||
+            e.key === 'Spacebar' ||  // 일부 구형 브라우저
+            e.keyCode === 32          // 레거시 fallback
+        );
+        if (isSpace) {
+            e.preventDefault();
+            if (this.gameState === 'waiting' || this.gameState === 'gameOver') {
+                this.startGame();
             }
-            createStars() { this.stars = Array.from({length:50}, () => ({ x:Math.random()*this.canvas.width, y:Math.random()*this.canvas.height, size:Math.random()*2+1, alpha:Math.random()*0.8+0.2 })); }
+        }
+
+        // Z 키 발사
+        const isZ = (
+            e.code === 'KeyZ' ||
+            e.key === 'z' ||
+            e.key === 'Z'
+        );
+        if (isZ && this.gameState === 'playing') {
+            this.missiles.push({
+                x: this.ufo.x + 14,
+                y: this.ufo.y,
+                width: 4, height: 8,
+                speed: this.missileSpeed
+            });
+        }
+    });
+
+    document.addEventListener('keyup', e => {
+        const keyId = e.code || e.key;
+        this.keys[keyId] = false;
+    });
+
+    // 터치 이벤트는 그대로 유지
+    this.canvas.addEventListener('touchstart', e => { /* ... */ });
+    this.canvas.addEventListener('touchmove', e => { /* ... */ });
+}
+
+            createStars() { 
+                this.stars = Array.from({length:50}, () => ({ 
+                    x:Math.random()*this.canvas.width, 
+                    y:Math.random()*this.canvas.height, 
+                    size:Math.random()*2+1, 
+                    alpha:Math.random()*0.8+0.2 
+                })); 
+            }
             startGame() {
-                this.gameState='playing'; this.startTime=Date.now(); this.meteors=[]; this.shields=[]; this.missiles=[];
-                this.ufo.x=300; this.meteorSpeed=1.5; this.meteorSpawnRate=0.015; this.meteorSizeVariation=0.5;
-                this.shieldActive=false; this.sunWarning=false; this.sunActive=false;
+                this.gameState='playing'; 
+                this.startTime=Date.now(); 
+                this.meteors=[]; 
+                this.shields=[]; 
+                this.missiles=[];
+                this.ufo.x=300; 
+                this.meteorSpeed=1.5; 
+                this.meteorSpawnRate=0.015; 
+                this.meteorSizeVariation=0.5;
+                this.sunWarning=false; 
+                this.sunActive=false;
+                this.sunCount = 0;
+                this.lastSunTime = 0;
                 document.getElementById('instructions').style.display='none';
                 document.getElementById('gameOver').style.display='none';
                 document.getElementById('shieldIndicator').style.display='none';
             }
             update() {
                 if (this.gameState!=='playing') return;
+                
                 this.survivedTime = Math.floor((Date.now() - this.startTime)/1000);
                 document.getElementById('timer').textContent = this.survivedTime;
+                
                 if (this.shieldActive) {
                     const rem = Math.ceil((this.shieldEndTime - Date.now())/1000);
-                    if (rem<=0) { this.shieldActive=false; document.getElementById('shieldIndicator').style.display='none'; this.canvas.classList.remove('shield-active'); }
-                    else document.getElementById('shieldTime').textContent=rem;
+                    if (rem<=0) { 
+                        this.shieldActive=false; 
+                        document.getElementById('shieldIndicator').style.display='none'; 
+                        this.canvas.classList.remove('shield-active'); 
+                    } else {
+                        document.getElementById('shieldTime').textContent=rem;
+                    }
                 }
-                if (!this.sunWarning && !this.sunActive && this.survivedTime >= this.sunThresholdTime) {
-                    this.sunWarning=true; this.sunWarningStart=Date.now();
+                
+                // 태양 시스템 업데이트
+                if (!this.sunWarning && !this.sunActive) {
+                    // 첫 번째 태양은 15초 후, 이후 태양들은 15-20초 간격
+                    let nextSunTime;
+                    if (this.sunCount === 0) {
+                        nextSunTime = this.sunThresholdTime;
+                    } else {
+                        nextSunTime = this.lastSunTime + 15 + Math.random() * 5; // 15-20초 간격
+                    }
+                    
+                    if (this.survivedTime >= nextSunTime) {
+                        this.sunWarning = true;
+                        this.sunWarningStart = Date.now();
+                        
+                        // 태양 위치 랜덤 설정 (왼쪽, 중간, 오른쪽)
+                        const positions = [
+                            this.sunRadius, // 왼쪽
+                            this.canvas.width / 2, // 중간
+                            this.canvas.width - this.sunRadius // 오른쪽
+                        ];
+                        this.sunX = positions[Math.floor(Math.random() * positions.length)];
+                        
+                        // 태양 속도와 경고 시간을 점점 빠르게
+                        this.sunSpeed = 2 + this.sunCount * 0.5; // 매 회마다 0.5씩 증가
+                        this.sunWarningDuration = Math.max(1000, 3000 - this.sunCount * 300); // 최소 1초까지 단축
+                    }
                 }
+                
                 if (this.sunWarning && Date.now()-this.sunWarningStart>this.sunWarningDuration) {
-                    this.sunWarning=false; this.sunActive=true; this.sunX=-this.sunWidth;
+                    this.sunWarning=false; 
+                    this.sunActive=true; 
+                    this.sunY=-this.sunRadius*2;
                 }
+                
                 if (this.sunActive) {
-                    this.sunX+=this.sunSpeed;
-                    if (this.sunX>this.canvas.width) this.sunActive=false;
+                    this.sunY+=this.sunSpeed;
+                    if (this.sunY>this.canvas.height+this.sunRadius*2) {
+                        this.sunActive=false;
+                        this.sunCount++; // 태양 카운트 증가
+                        this.lastSunTime = this.survivedTime; // 마지막 태양 시간 기록
+                    }
                 }
+                
                 const df=1+this.survivedTime*0.15;
                 this.meteorSpeed=Math.min(8,1.5*df);
                 this.meteorSpawnRate=Math.min(0.08,0.015*df);
                 this.meteorSizeVariation=Math.min(1.5,0.5+this.survivedTime*0.02);
+                
                 if (this.keys['ArrowLeft']) this.ufo.x=Math.max(16,this.ufo.x-this.ufo.speed);
                 if (this.keys['ArrowRight']) this.ufo.x=Math.min(this.canvas.width-48,this.ufo.x+this.ufo.speed);
+                
+                // 태양과의 충돌 체크
+                if (this.sunActive && !this.shieldActive) {
+                    const sunCenterX = this.sunX;
+                    const sunCenterY = this.sunY;
+                    const ufoCenterX = this.ufo.x + this.ufo.width / 2;
+                    const ufoCenterY = this.ufo.y + this.ufo.height / 2;
+                    const distance = Math.sqrt((ufoCenterX - sunCenterX) ** 2 + (ufoCenterY - sunCenterY) ** 2);
+                    
+                    if (distance < this.sunRadius + 10) {
+                        this.gameOver();
+                    }
+                }
+                
                 if (!this.sunWarning && !this.sunActive && Math.random()<this.meteorSpawnRate) {
                     const sz=0.5+Math.random()*this.meteorSizeVariation;
                     const cols=['red','orange','yellow','purple','blue','green'];
                     const col=cols[Math.floor(Math.random()*cols.length)];
-                    this.meteors.push({ x:Math.random()*(this.canvas.width-30), y:-30, width:16*sz, height:16*sz, speed:this.meteorSpeed+Math.random()*3, size:sz, color:col });
+                    this.meteors.push({ 
+                        x:Math.random()*(this.canvas.width-30), 
+                        y:-30, 
+                        width:16*sz, 
+                        height:16*sz, 
+                        speed:this.meteorSpeed+Math.random()*3, 
+                        size:sz, 
+                        color:col 
+                    });
                 }
+                
                 if (!this.sunWarning && !this.sunActive && Math.random()<this.shieldSpawnRate && !this.shieldActive) {
-                    this.shields.push({ x:Math.random()*(this.canvas.width-20), y:-20, width:20, height:20, speed:2 });
+                    this.shields.push({ 
+                        x:Math.random()*(this.canvas.width-20), 
+                        y:-20, 
+                        width:20, 
+                        height:20, 
+                        speed:2 
+                    });
                 }
-                this.meteors=this.meteors.filter(m=>{m.y+=m.speed;return m.y<this.canvas.height+50;});
-                this.shields=this.shields.filter(s=>{s.y+=s.speed;return s.y<this.canvas.height+30;});
-                this.shields=this.shields.filter(s=>{if(this.checkCollision(this.ufo,s)){this.activateShield();return false;}return true;});
-                if(!this.shieldActive&&!this.sunActive) this.meteors.forEach(m=>{if(this.checkCollision(this.ufo,m)) this.gameOver();});
+                
+                this.meteors=this.meteors.filter(m=>{
+                    m.y+=m.speed;
+                    return m.y<this.canvas.height+50;
+                });
+                
+                this.shields=this.shields.filter(s=>{
+                    s.y+=s.speed;
+                    return s.y<this.canvas.height+30;
+                });
+                
+                this.shields=this.shields.filter(s=>{
+                    if(this.checkCollision(this.ufo,s)){
+                        this.activateShield();
+                        return false;
+                    }
+                    return true;
+                });
+                
+                if(!this.shieldActive&&!this.sunActive) {
+                    this.meteors.forEach(m=>{
+                        if(this.checkCollision(this.ufo,m)) {
+                            this.gameOver();
+                        }
+                    });
+                }
+                
                 this.missiles.forEach(b=>b.y-=b.speed);
                 this.missiles=this.missiles.filter(b=>b.y+b.height>0);
+                
                 let surv=[];
-                this.meteors.forEach(m=>{let hit=false;this.missiles=this.missiles.filter(b=>{if(!hit&&this.checkCollision(b,m)){hit=true;return false;}return true;});if(!hit) surv.push(m);});
+                this.meteors.forEach(m=>{
+                    let hit=false;
+                    this.missiles=this.missiles.filter(b=>{
+                        if(!hit&&this.checkCollision(b,m)){
+                            hit=true;
+                            return false;
+                        }
+                        return true;
+                    });
+                    if(!hit) surv.push(m);
+                });
                 this.meteors=surv;
             }
+            
             draw() {
-                this.ctx.fillStyle='rgba(0,4,40,0.1)';this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
-                this.stars.forEach(s=>{this.ctx.fillStyle=`rgba(255,255,255,${s.alpha})`;this.ctx.fillRect(s.x,s.y,s.size,s.size);});
+                // 배경을 완전히 지우기
+                this.ctx.fillStyle='#000428';
+                this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
+                
+                // 별 그리기
+                this.stars.forEach(s=>{
+                    this.ctx.fillStyle=rgba(255,255,255,${s.alpha});
+                    this.ctx.fillRect(s.x,s.y,s.size,s.size);
+                });
+                
                 if(this.gameState==='playing'){
+                    // UFO 그리기
                     this.drawUFO(this.ufo.x,this.ufo.y);
+                    
+                    // 방패 효과
                     if(this.shieldActive) this.drawShieldEffect(this.ufo.x,this.ufo.y);
-                    if(this.sunWarning){this.ctx.fillStyle='red';this.ctx.font='30px Courier New';this.ctx.fillText('⚠️ 태양 공격 경고! ⚠️',this.canvas.width/2-170,this.canvas.height/2);}                   
-                    if(this.sunActive){this.ctx.fillStyle='orange';this.ctx.fillRect(this.sunX,0,this.sunWidth,this.canvas.height);}                   
+                    
+                    // 태양 경고
+                    if(this.sunWarning){
+                        this.ctx.fillStyle='red';
+                        this.ctx.font='30px Courier New';
+                        this.ctx.textAlign='center';
+                        this.ctx.fillText('⚠️ 태양 공격 경고! ⚠️',this.canvas.width/2,this.canvas.height/2);
+                        this.ctx.textAlign='left';
+                    }
+                    
+                    // 태양 공격
+                    if(this.sunActive){
+                        // 태양 그리기 (원형)
+                        const sunCenterX = this.sunX;
+                        const sunCenterY = this.sunY;
+                        
+                        // 태양 외곽 빛 효과
+                        const gradient = this.ctx.createRadialGradient(
+                            sunCenterX, sunCenterY, this.sunRadius * 0.3,
+                            sunCenterX, sunCenterY, this.sunRadius * 1.5
+                        );
+                        gradient.addColorStop(0, 'rgba(255, 255, 0, 0.8)');
+                        gradient.addColorStop(0.4, 'rgba(255, 165, 0, 0.6)');
+                        gradient.addColorStop(0.7, 'rgba(255, 69, 0, 0.3)');
+                        gradient.addColorStop(1, 'rgba(255, 0, 0, 0.1)');
+                        
+                        this.ctx.fillStyle = gradient;
+                        this.ctx.beginPath();
+                        this.ctx.arc(sunCenterX, sunCenterY, this.sunRadius * 1.5, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        // 태양 본체
+                        const sunGradient = this.ctx.createRadialGradient(
+                            sunCenterX, sunCenterY, 0,
+                            sunCenterX, sunCenterY, this.sunRadius
+                        );
+                        sunGradient.addColorStop(0, '#ffff00');
+                        sunGradient.addColorStop(0.7, '#ff8800');
+                        sunGradient.addColorStop(1, '#ff4400');
+                        
+                        this.ctx.fillStyle = sunGradient;
+                        this.ctx.beginPath();
+                        this.ctx.arc(sunCenterX, sunCenterY, this.sunRadius, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
+                    
+                    // 운석들 그리기
                     this.meteors.forEach(m=>this.drawMeteor(m.x,m.y,m.size,m.color));
+                    
+                    // 방패 아이템들 그리기
                     this.shields.forEach(s=>this.drawShieldItem(s.x,s.y));
-                    this.missiles.forEach(b=>{this.ctx.fillStyle='white';this.ctx.fillRect(b.x,b.y,b.width,b.height);});
+                    
+                    // 미사일들 그리기
+                    this.missiles.forEach(b=>{
+                        this.ctx.fillStyle='#ffff00';
+                        this.ctx.fillRect(b.x,b.y,b.width,b.height);
+                    });
                 }
             }
+            
             drawUFO(x, y) {
-                const ufoPattern = [
-                    "00000000111111110000000000000000",
-                    "00000011111111111100000000000000",
-                    "00001111111111111111000000000000",
-                    "00011111111111111111110000000000",
-                    "00111111111111111111111000000000",
-                    "01111111111111111111111100000000",
-                    "11111111111111111111111110000000",
-                    "11111111111111111111111111000000",
-                    "11111111111111111111111111100000",
-                    "11111111111111111111111111110000",
-                    "01111111111111111111111111100000",
-                    "00111111111111111111111111000000",
-                    "00011111111111111111111110000000",
-                    "00001111111111111111111100000000",
-                    "00000111111111111111111000000000",
-                    "00000001111111111111100000000000"
-                ];
-                const pixelSize = 2;
-                for (let row = 0; row < ufoPattern.length; row++) {
-                    for (let col = 0; col < ufoPattern[row].length; col++) {
-                        if (ufoPattern[row][col] === '1') {
-                            if (row < 4) this.ctx.fillStyle = '#88ff88';
-                            else if (row < 8) this.ctx.fillStyle = '#44dd44';
-                            else this.ctx.fillStyle = '#22aa22';
-                            this.ctx.fillRect(x + col * pixelSize, y + row * pixelSize, pixelSize, pixelSize);
-                        }
-                    }
-                }
+                // UFO 본체 (원반 모양)
+                this.ctx.fillStyle = '#44dd44';
+                this.ctx.fillRect(x+4, y+8, 24, 8);
+                
+                this.ctx.fillStyle = '#66ff66';
+                this.ctx.fillRect(x+2, y+10, 28, 4);
+                
+                this.ctx.fillStyle = '#88ff88';
+                this.ctx.fillRect(x+6, y+6, 20, 4);
+                
+                // UFO 돔 (조종석)
                 this.ctx.fillStyle = '#6666ff';
-                this.ctx.fillRect(x + 12, y + 6, 8, 4);
+                this.ctx.fillRect(x+12, y+2, 8, 8);
+                
+                // UFO 라이트
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.fillRect(x+8, y+12, 2, 2);
+                this.ctx.fillRect(x+14, y+12, 2, 2);
+                this.ctx.fillRect(x+20, y+12, 2, 2);
             }
+            
             drawMeteor(x, y, size = 1, color = 'red') {
-                const colorPalettes = {
-                    red: ['#ff4444', '#cc2222', '#aa1111'],
-                    orange: ['#ff8844', '#cc4422', '#aa2211'],
-                    yellow: ['#ffff44', '#cccc22', '#aaaa11'],
-                    purple: ['#ff44ff', '#cc22cc', '#aa11aa'],
-                    blue: ['#4444ff', '#2222cc', '#1111aa'],
-                    green: ['#44ff44', '#22cc22', '#11aa11']
+                const colorMap = {
+                    red: '#ff4444',
+                    orange: '#ff8844', 
+                    yellow: '#ffff44',
+                    purple: '#ff44ff',
+                    blue: '#4444ff',
+                    green: '#44ff44'
                 };
-                const palette = colorPalettes[color] || colorPalettes.red;
-                const meteorPattern = [
-                    "0000111111000000",
-                    "0011111111110000",
-                    "0111111111111000",
-                    "1111111111111100",
-                    "1111111111111110",
-                    "1111111111111110",
-                    "1111111111111110",
-                    "1111111111111110",
-                    "1111111111111110",
-                    "1111111111111110",
-                    "1111111111111110",
-                    "1111111111111100",
-                    "0111111111111000",
-                    "0011111111110000",
-                    "0000111111000000",
-                    "0000001100000000"
-                ];
-                const pixelSize = size;
-                for (let row = 0; row < meteorPattern.length; row++) {
-                    for (let col = 0; col < meteorPattern[row].length; col++) {
-                        if (meteorPattern[row][col] === '1') {
-                            if ((row + col) % 3 === 0) this.ctx.fillStyle = palette[0];
-                            else if ((row + col) % 3 === 1) this.ctx.fillStyle = palette[1];
-                            else this.ctx.fillStyle = palette[2];
-                            this.ctx.fillRect(x + col * pixelSize, y + row * pixelSize, pixelSize, pixelSize);
-                        }
-                    }
-                }
-                const tailIntensity = Math.min(1, size);
-                this.ctx.fillStyle = `rgba(255, 100, 0, ${0.6 * tailIntensity})`;
-                this.ctx.fillRect(x + 6 * size, y - 8 * size, 4 * size, 8 * size);
-                this.ctx.fillStyle = `rgba(255, 200, 0, ${0.4 * tailIntensity})`;
-                this.ctx.fillRect(x + 7 * size, y - 12 * size, 2 * size, 12 * size);
+                
+                const mainColor = colorMap[color] || '#ff4444';
+                const meteorSize = 16 * size;
+                
+                // 운석 본체
+                this.ctx.fillStyle = mainColor;
+                this.ctx.fillRect(x, y, meteorSize, meteorSize);
+                
+                // 운석 그림자 효과
+                this.ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                this.ctx.fillRect(x+meteorSize*0.7, y+meteorSize*0.7, meteorSize*0.3, meteorSize*0.3);
+                
+                // 운석 꼬리
+                this.ctx.fillStyle = 'rgba(255, 100, 0, 0.6)';
+                this.ctx.fillRect(x + meteorSize*0.3, y - meteorSize*0.5, meteorSize*0.4, meteorSize*0.5);
             }
+            
             drawShieldItem(x, y) {
-                const shieldPattern = [
-                    "00000111111100000000",
-                    "00011111111111000000",
-                    "00111111111111100000",
-                    "01111111111111110000",
-                    "11111111111111111000",
-                    "11111111111111111100",
-                    "11111111111111111110",
-                    "11111111111111111110",
-                    "11111111111111111110",
-                    "11111111111111111110",
-                    "11111111111111111110",
-                    "11111111111111111110",
-                    "11111111111111111100",
-                    "11111111111111111000",
-                    "01111111111111110000",
-                    "00111111111111100000",
-                    "00011111111111000000",
-                    "00000111111100000000",
-                    "00000001110000000000",
-                    "00000000100000000000"
-                ];
-                const pixelSize = 1;
                 const time = Date.now() * 0.01;
-                for (let row = 0; row < shieldPattern.length; row++) {
-                    for (let col = 0; col < shieldPattern[row].length; col++) {
-                        if (shieldPattern[row][col] === '1') {
-                            const hue = (time + row * 10 + col * 5) % 360;
-                            this.ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
-                            this.ctx.fillRect(x + col * pixelSize, y + row * pixelSize, pixelSize, pixelSize);
-                        }
-                    }
-                }
+                const hue = time % 360;
+                
+                // 방패 아이템 (빛나는 효과)
+                this.ctx.fillStyle = hsl(${hue}, 80%, 60%);
+                this.ctx.fillRect(x+2, y, 16, 4);
+                this.ctx.fillRect(x, y+4, 20, 12);
+                this.ctx.fillRect(x+2, y+16, 16, 4);
+                
+                // 중앙 하이라이트
+                this.ctx.fillStyle = hsl(${hue}, 60%, 80%);
+                this.ctx.fillRect(x+6, y+6, 8, 8);
             }
+            
             drawShieldEffect(x, y) {
                 const time = Date.now() * 0.005;
-                const radius = 40 + Math.sin(time) * 5;
-                this.ctx.strokeStyle = `rgba(0, 255, 255, 0.8)`;
-                this.ctx.lineWidth = 3;
+                const radius = 30 + Math.sin(time) * 5;
+                
+                this.ctx.strokeStyle = rgba(0, 255, 255, 0.8);
+                this.ctx.lineWidth = 2;
                 this.ctx.setLineDash([5, 5]);
                 this.ctx.lineDashOffset = time * 10;
                 this.ctx.beginPath();
@@ -304,12 +461,37 @@
                 this.ctx.stroke();
                 this.ctx.setLineDash([]);
             }
-            checkCollision(r1, r2) { return r1.x < r2.x + r2.width && r1.x + r1.width > r2.x && r1.y < r2.y + r2.height && r1.y + r1.height > r2.y; }
-            activateShield() { this.shieldActive = true; this.shieldEndTime = Date.now() + 5000; document.getElementById('shieldIndicator').style.display = 'block'; this.canvas.classList.add('shield-active'); }
-            gameOver() { this.gameState = 'gameOver'; document.getElementById('finalTime').textContent = this.survivedTime; document.getElementById('gameOver').style.display = 'block'; }
-            gameLoop() { this.update(); this.draw(); requestAnimationFrame(() => this.gameLoop()); }
+            
+            checkCollision(r1, r2) { 
+                return r1.x < r2.x + r2.width && 
+                       r1.x + r1.width > r2.x && 
+                       r1.y < r2.y + r2.height && 
+                       r1.y + r1.height > r2.y; 
+            }
+            
+            activateShield() { 
+                this.shieldActive = true; 
+                this.shieldEndTime = Date.now() + 5000; 
+                document.getElementById('shieldIndicator').style.display = 'block'; 
+                this.canvas.classList.add('shield-active'); 
+            }
+            
+            gameOver() { 
+                this.gameState = 'gameOver'; 
+                document.getElementById('finalTime').textContent = this.survivedTime; 
+                document.getElementById('gameOver').style.display = 'block'; 
+            }
+            
+            gameLoop() { 
+                this.update(); 
+                this.draw(); 
+                requestAnimationFrame(() => this.gameLoop()); 
+            }
         }
-        window.addEventListener('load', () => { new UFOGame(); });
+        
+        window.addEventListener('load', () => { 
+            new UFOGame(); 
+        });
     </script>
 </body>
 </html>
